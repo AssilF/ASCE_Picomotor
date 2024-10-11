@@ -39,6 +39,7 @@ pico_sdk_init()
 
 add_executable(ASCE_Picomotor Wire.cpp ASCE_Picomotor.cpp)
 
+target_include_directories(ASCE_Picomotor PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 
 pico_set_program_name(ASCE_Picomotor "ASCE_Picomotor")
 pico_set_program_version(ASCE_Picomotor "0.1")
