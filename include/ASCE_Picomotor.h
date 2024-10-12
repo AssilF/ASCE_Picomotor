@@ -65,3 +65,73 @@ struct control_frame
     uint8_t yaw_servo_pose=0;
     uint8_t grip_servo_pose=0;
 };
+
+
+#define system_freq 125e6
+#define motor_freq 80e3f
+#define MG996r_ferq 50.0f //50-60 ig ?
+#define SG90_freq 50.0f
+
+#define MG996r_maximum_pulse_width 2500 //in µs
+#define MG996r_minimum_pulse_width 500
+
+#define SG90_maximum_pulse_width 2500
+#define SG90_minimum_pulse_width 500
+
+
+double mapRange(double a1,double a2,double b1,double b2,double s) 
+{
+  return b1 + (s-a1)*(b2-b1)/(a2-a1);
+}
+
+double constrain(double x, double a, double b) {
+    if(x < a) {
+        return a;
+    }
+    else if(b < x) {
+        return b;
+    }
+    else
+        return x;
+}
+
+typedef struct pwm_divisor
+{
+    float clk_div;
+    float wrap;
+};
+
+bool calculate_PWM_div(pwm_divisor* buffer, double target_freq)
+{
+	bool dirtybit=1;
+	if (system_freq / (target_freq * 65535) < 1)
+	{
+		buffer->clk_div = 1.0f;
+		buffer->wrap = system_freq / target_freq;
+	}
+	else
+	{
+		buffer->clk_div= system_freq / (target_freq * 65535);
+		buffer->wrap = 65535;
+	}
+	if(buffer->wrap<1)
+	{
+		buffer->wrap = 1;
+		dirtybit = 0;
+	}else
+	if(buffer->wrap > 65535)
+	{
+		buffer->wrap = 65535;
+		dirtybit = 0;
+	}
+	if(buffer->clk_div>255.7f)
+	{
+		buffer->clk_div = 255.7f;
+		dirtybit = 0;
+	}else
+	if(buffer->clk_div < 1.0f)
+	{
+		buffer->clk_div = 1.0f;
+	};
+	return dirtybit;
+}

@@ -8,42 +8,12 @@
 #include "hardware/pwm.h"
 #include <math.h>
 
-#define system_freq 125e6
-#define target_motor_freq 80e3
-#define motor_PWM_Freq_div ((system_freq)/(target_motor_freq))
-#define MG996r_ferq 50 //50-60 ig ?
-#define SG90_freq 50
-#define MG996r_PWM_Freq_div ((system_freq)/(MG996r_ferq))
-#define SG90_PWM_Freq_div ((system_freq)/(SG90_freq))
-#define us_to_pulse_count(us,freq) ((us*65536)/((1e6/freq)))
-
-#define MG996r_maximum_pulse_width 2000 //in µs
-#define MG996r_minimum_pulse_width 1000
-
-#define SG90_maximum_pulse_width 2000
-#define SG90_minimum_pulse_width 1000
-
-#define servo_angle(degrees,min_pulse,max_pulse,freq,max_angle) (mapRange(0,max_angle,us_to_pulse_count(min_pulse,freq),us_to_pulse_count(max_pulse,freq),degrees))
-
-int mapRange(int a1,int a2,int b1,int b2,int s) {
-  return b1 + (s-a1)*(b2-b1)/(a2-a1);
-}
-
-int constrain(int x, int a, int b) {
-    if(x < a) {
-        return a;
-    }
-    else if(b < x) {
-        return b;
-    }
-    else
-        return x;
-}
-
 int left_top_motor_speed;
 int left_bot_motor_speed;
 int right_top_motor_speed;
 int right_bot_motor_speed;
+
+uint16_t wrap_set[8]; //each slice has its own wrap
 
 control_frame pico_frame;
 
@@ -96,14 +66,44 @@ int main()
     pitch_yaw_servo_pwm_config=pwm_get_default_config();
     grip_servo_pwm_config=pwm_get_default_config(); 
 
+    //calculating divs and wraps:
+    pwm_divisor div;
+
     //lez start configuring this stuff *sigh* (first commit commence here) //default PWM clock speed is about 125MHz so do your math accordingly (I am talking to you my future self)
-    pwm_config_set_clkdiv(&left_side_motor_pwm_config ,motor_PWM_Freq_div); //this gives us a frequency of 80KHz (aka one wrap each 0.0008). . . but like, hold up, when will the pwm register wrap ? (I beleive the counter buffer is like, 16 bits ? about up to 65,536)
-    pwm_config_set_clkdiv(&right_side_motor_pwm_config,motor_PWM_Freq_div);
-    pwm_config_set_clkdiv(&arm_extension_pwm_config,motor_PWM_Freq_div);
-    pwm_config_set_clkdiv(&arm_rotation_pwm_config,motor_PWM_Freq_div);
-    pwm_config_set_clkdiv(&arm_elbow_servo_pwm_config,MG996r_PWM_Freq_div);
-    pwm_config_set_clkdiv(&pitch_yaw_servo_pwm_config,SG90_PWM_Freq_div);
-    pwm_config_set_clkdiv(&grip_servo_pwm_config,SG90_PWM_Freq_div); //I know what you think about this, why everyone got its own variable, answer is, idk man I may want to tweak things seperately, but virtually we only needed 2 profiles or configs
+    calculate_PWM_div(&div,motor_freq);
+    pwm_config_set_clkdiv(&left_side_motor_pwm_config,div.clk_div); //this gives us a frequency of 80KHz (aka one wrap each 0.0008). . . but like, hold up, when will the pwm register wrap ? (I beleive the counter buffer is like, 16 bits ? about up to 65,536)
+    pwm_config_set_clkdiv(&right_side_motor_pwm_config,div.clk_div);
+    pwm_config_set_clkdiv(&arm_extension_pwm_config,div.clk_div);
+    pwm_config_set_clkdiv(&arm_rotation_pwm_config,div.clk_div);
+    pwm_config_set_wrap(&left_side_motor_pwm_config,div.wrap); //this gives us a frequency of 80KHz (aka one wrap each 0.0008). . . but like, hold up, when will the pwm register wrap ? (I beleive the counter buffer is like, 16 bits ? about up to 65,536)
+    pwm_config_set_wrap(&right_side_motor_pwm_config,div.wrap);
+    pwm_config_set_wrap(&arm_extension_pwm_config,div.wrap);
+    pwm_config_set_wrap(&arm_rotation_pwm_config,div.wrap); 
+    //saving the wraps;
+    wrap_set[left_side_motor_pwm_slice]=div.wrap;
+    wrap_set[right_side_motor_pwm_slice]=div.wrap;
+    wrap_set[arm_extension_pwm_slice]=div.wrap;
+    wrap_set[arm_rotation_pwm_slice]=div.wrap;;
+
+
+//configuring the servos
+    calculate_PWM_div(&div,MG996r_ferq);
+    pwm_config_set_clkdiv(&arm_elbow_servo_pwm_config,div.clk_div);
+    pwm_config_set_wrap(&arm_elbow_servo_pwm_config,div.wrap); 
+    wrap_set[arm_elbow_servo_pwm_slice]=div.wrap;
+
+
+
+    calculate_PWM_div(&div,SG90_freq);
+    pwm_config_set_clkdiv(&pitch_yaw_servo_pwm_config,div.clk_div);
+    pwm_config_set_clkdiv(&grip_servo_pwm_config,div.clk_div); //I know what you think about this, why everyone got its own variable, answer is, idk man I may want to tweak things seperately, but virtually we only needed 2 profiles or configs
+    pwm_config_set_wrap(&pitch_yaw_servo_pwm_config,div.wrap);
+    pwm_config_set_wrap(&grip_servo_pwm_config,div.wrap);
+    wrap_set[pitch_yaw_servo_pwm_slice]=div.wrap;
+    wrap_set[grip_servo_pwm_slice]=div.wrap;
+
+    //again, none of this is necessary we could have just hardcoded this but my adhd brain is just not letting me be :(
+
 
     pwm_init(left_side_motor_pwm_slice,&left_side_motor_pwm_config,0);
     pwm_init(right_side_motor_pwm_slice,&right_side_motor_pwm_config,0);
@@ -164,23 +164,13 @@ int main()
         sleep_us(50);
         static int i;
         static int t;
-
-
-        for(int a=0; a<=180; a++){
-        pwm_set_gpio_level(arm_servo_pin,1639);
+        static uint8_t a;
+        a++;
+        if(a>180) a=0;
         i++;
         t+=10;
-        sleep_ms(50);
         pwm_set_both_levels(left_side_motor_pwm_slice,i,t);
-        }
-        for(int a=180; a>0; a--){
-        pwm_set_gpio_level(arm_servo_pin,);
-        sleep_ms(50);
-                i++;
-        t+=10;
-                pwm_set_both_levels(left_side_motor_pwm_slice,i,t);
-        }
-
+        pwm_set_gpio_level(arm_servo_pin,(int)servo_angle(a,MG996r_minimum_pulse_width,MG996r_maximum_pulse_width,50,180));
 
         unpack_frame();
     }
