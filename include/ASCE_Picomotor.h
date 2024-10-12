@@ -69,8 +69,8 @@ struct control_frame
 
 #define system_freq 125e6
 #define motor_freq 80e3f
-#define MG996r_ferq 50.0f //50-60 ig ?
-#define SG90_freq 50.0f
+#define MG996r_ferq 50//50-60 ig ?
+#define SG90_freq 50
 
 #define MG996r_maximum_pulse_width 2500 //in µs
 #define MG996r_minimum_pulse_width 500
@@ -98,7 +98,7 @@ double constrain(double x, double a, double b) {
 typedef struct pwm_divisor
 {
     float clk_div;
-    float wrap;
+    uint16_t wrap;
 };
 
 bool calculate_PWM_div(pwm_divisor* buffer, double target_freq)

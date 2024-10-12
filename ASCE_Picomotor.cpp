@@ -15,6 +15,12 @@ int right_bot_motor_speed;
 
 uint16_t wrap_set[8]; //each slice has its own wrap
 
+void position_servo(int servo_pin ,float angle)
+{
+    int current_wrap=wrap_set[pwm_gpio_to_slice_num(servo_pin)];
+    pwm_set_gpio_level(servo_pin,(int)mapRange(1,180,current_wrap*0.05,current_wrap*0.1,angle));
+}
+
 control_frame pico_frame;
 
 char frame_buffer[sizeof(pico_frame)];
@@ -57,7 +63,7 @@ void unpack_frame()
 int main()
 {   
     stdio_init_all();
-    
+
     left_side_motor_pwm_config=pwm_get_default_config();
     right_side_motor_pwm_config=pwm_get_default_config();
     arm_extension_pwm_config=pwm_get_default_config();
@@ -84,13 +90,14 @@ int main()
     wrap_set[right_side_motor_pwm_slice]=div.wrap;
     wrap_set[arm_extension_pwm_slice]=div.wrap;
     wrap_set[arm_rotation_pwm_slice]=div.wrap;;
-
+    printf("calculated motor div: %f and wrap: %i\n",div.clk_div,div.wrap);
 
 //configuring the servos
     calculate_PWM_div(&div,MG996r_ferq);
-    pwm_config_set_clkdiv(&arm_elbow_servo_pwm_config,div.clk_div);
-    pwm_config_set_wrap(&arm_elbow_servo_pwm_config,div.wrap); 
-    wrap_set[arm_elbow_servo_pwm_slice]=div.wrap;
+    pwm_config_set_clkdiv(&arm_elbow_servo_pwm_config,64.f);
+    pwm_config_set_wrap(&arm_elbow_servo_pwm_config,3906.2f); 
+    wrap_set[arm_elbow_servo_pwm_slice]=3906.2f;
+    printf("MG996R div: %f and wrap: %i\n",div.clk_div,div.wrap);
 
 
 
@@ -101,6 +108,7 @@ int main()
     pwm_config_set_wrap(&grip_servo_pwm_config,div.wrap);
     wrap_set[pitch_yaw_servo_pwm_slice]=div.wrap;
     wrap_set[grip_servo_pwm_slice]=div.wrap;
+    printf("SG90 div: %f and wrap: %i\n",div.clk_div,div.wrap);
 
     //again, none of this is necessary we could have just hardcoded this but my adhd brain is just not letting me be :(
 
@@ -117,19 +125,33 @@ int main()
 
     gpio_init(left_top_motor_n_pin);
     gpio_init(left_top_motor_p_pin);
+    gpio_init(left_top_motor_PWM_pin);
     gpio_set_function(left_top_motor_PWM_pin,GPIO_FUNC_PWM);
 
     gpio_init(right_top_motor_n_pin);
     gpio_init(right_top_motor_p_pin);
+    gpio_init(right_top_motor_PWM_pin);
     gpio_set_function(right_top_motor_PWM_pin,GPIO_FUNC_PWM);
 
     gpio_init(left_bot_motor_n_pin);
     gpio_init(left_bot_motor_p_pin);
+    gpio_init(left_bot_motor_PWM_pin);
     gpio_set_function(left_bot_motor_PWM_pin,GPIO_FUNC_PWM);
 
     gpio_init(right_bot_motor_n_pin);
     gpio_init(right_bot_motor_p_pin);
+    gpio_init(right_bot_motor_PWM_pin);
     gpio_set_function(right_bot_motor_PWM_pin,GPIO_FUNC_PWM);
+
+    gpio_init(arm_rotation_motor_n_pin);
+    gpio_init(arm_rotation_motor_p_pin);
+    gpio_init(arm_servo_pin);
+    gpio_init(elbow_servo_pin);
+    gpio_init(arm_extension_motor_n_pin);
+    gpio_init(arm_extension_motor_p_pin);
+    gpio_init(pitch_servo_pin);
+    gpio_init(yaw_servo_pin);
+    gpio_init(grip_servo_pin);
 
     gpio_set_function(arm_rotation_motor_n_pin,GPIO_FUNC_PWM);
     gpio_set_function(arm_rotation_motor_p_pin,GPIO_FUNC_PWM);
@@ -156,22 +178,23 @@ int main()
     Wire.begin(0x17);
     
     pwm_set_enabled(left_side_motor_pwm_slice,1);
-    pwm_set_enabled(left_side_motor_pwm_slice,1);
+    pwm_set_enabled(right_side_motor_pwm_slice,1);
+    pwm_set_enabled(arm_extension_pwm_slice,1);
+    pwm_set_enabled(arm_rotation_pwm_slice,1);
     pwm_set_enabled(arm_elbow_servo_pwm_slice,1);
+    pwm_set_enabled(pitch_yaw_servo_pwm_slice,1);
+    pwm_set_enabled(grip_servo_pwm_slice,1);
 
     while (true) 
     {
-        sleep_us(50);
-        static int i;
-        static int t;
-        static uint8_t a;
-        a++;
-        if(a>180) a=0;
-        i++;
-        t+=10;
-        pwm_set_both_levels(left_side_motor_pwm_slice,i,t);
-        pwm_set_gpio_level(arm_servo_pin,(int)servo_angle(a,MG996r_minimum_pulse_width,MG996r_maximum_pulse_width,50,180));
-
+        for(int a=1;a<180;a++){
+        position_servo(arm_servo_pin,a);
+        sleep_ms(20);
+        }
+        for(int a=180;a>1;a--){
+        position_servo(arm_servo_pin,a);
+        sleep_ms(20);
+        }
         unpack_frame();
     }
 }
