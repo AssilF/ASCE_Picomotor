@@ -95,7 +95,7 @@ double constrain(double x, double a, double b) {
         return x;
 }
 
-typedef struct pwm_divisor
+struct pwm_divisor
 {
     float clk_div;
     uint16_t wrap;
