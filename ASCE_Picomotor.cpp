@@ -56,16 +56,7 @@ void unpack_frame()
 }
 
 uint32_t pwm_reference_count;
-#define elbow_servo_maximum_pulse 2000 //they say it's between 1ms and 2ms but we'll find out ig
-#define elbow_servo_minimum_pulse 1000
-#define arm_servo_maximum_pulse 2000
-#define arm_servo_minimum_pulse 1000
-#define pitch_servo_maximum_pulse 2000
-#define pitch_servo_minimum_pulse 1000
-#define yaw_servo_maximum_pulse 2000
-#define yaw_servo_minimum_pulse 1000
-#define grip_servo_maximum_pulse 2000
-#define grip_servo_minimum_pulse 1000
+
 
 struct Servo
 {
@@ -130,8 +121,8 @@ struct ASCE_Mechiane
     
     void init()
     {
-        this->arm.init(arm_servo_pin,400,2500);
-        this->elbow.init(elbow_servo_pin,800,3500,240);
+        this->arm.init(arm_servo_pin,400,2400);
+        this->elbow.init(elbow_servo_pin,400,2400);
         this->pitch.init(pitch_servo_pin,1000,2000);
         this->yaw.init(yaw_servo_pin,1000,2000);
         this->grip.init(grip_servo_pin,1000,2000);
