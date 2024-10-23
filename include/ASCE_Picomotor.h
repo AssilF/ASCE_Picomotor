@@ -1,7 +1,7 @@
 #include "hardware/pwm.h" 
 
-#define left_top_motor_p_pin 15 //Each driven @ 14.4 volts 
-#define left_top_motor_n_pin 16
+#define left_top_motor_p_pin 16 //Each driven @ 14.4 volts 
+#define left_top_motor_n_pin 15
 #define left_top_motor_PWM_pin 2//PWM1A
 
 #define left_bot_motor_p_pin 17
@@ -9,12 +9,12 @@
 #define left_bot_motor_PWM_pin 3//PWM1B
 
 
-#define right_top_motor_p_pin 19
-#define right_top_motor_n_pin 20
+#define right_top_motor_p_pin 20
+#define right_top_motor_n_pin 19
 #define right_top_motor_PWM_pin 4//PWM2A
 
-#define right_bot_motor_p_pin 21
-#define right_bot_motor_n_pin 22
+#define right_bot_motor_p_pin 22
+#define right_bot_motor_n_pin 21
 #define right_bot_motor_PWM_pin 5//PWM2B
 
 
@@ -51,24 +51,22 @@ struct control_frame
   public:
     uint8_t flag_set;
 
-    int left_top_motor_target=0;
-    int left_bot_motor_target=0;
-    int right_top_motor_target=0;
-    int right_bot_motor_target=0;
-    float ease_value=0; //thinking of chaging the name of the interpolation factor/coeff to just "ease value"
+    float motor_bias=0;
+    float motor_power=0;
 
-    int arm_rotation_speed=0;
-    uint8_t arm_servo_pose=0;
-    int elbow_servo_pose=0;
-    int arm_extension_speed=0;
-    uint8_t pitch_servo_pose=0;
-    uint8_t yaw_servo_pose=0;
+    float arm_rotation_speed=0;
+    uint8_t arm_servo_pose=90;
+    uint8_t elbow_servo_pose=90;
+    float arm_extension_speed=0;
+    uint8_t pitch_servo_pose=90;
+    uint8_t yaw_servo_pose=90;
     uint8_t grip_servo_pose=0;
+
 };
 
 
 #define system_freq 125e6
-#define motor_freq 80e3f
+#define motor_freq 30e3f
 #define MG996r_ferq 50//50-60 ig ?
 #define SG90_freq 50
 
@@ -104,24 +102,24 @@ struct pwm_divisor
 bool calculate_PWM_div(pwm_divisor* buffer, double target_freq)
 {
 	bool dirtybit=1;
-	if (system_freq / (target_freq * 65535) < 1)
+	if (system_freq / (target_freq * 65534) < 1)
 	{
 		buffer->clk_div = 1.0f;
-		buffer->wrap = system_freq / target_freq;
+		buffer->wrap = system_freq/target_freq;
 	}
 	else
 	{
-		buffer->clk_div= system_freq / (target_freq * 65535);
-		buffer->wrap = 65535;
+		buffer->clk_div= system_freq/(target_freq * 65534);
+		buffer->wrap = 65534;
 	}
 	if(buffer->wrap<1)
 	{
 		buffer->wrap = 1;
 		dirtybit = 0;
 	}else
-	if(buffer->wrap > 65535)
+	if(buffer->wrap > 65534)
 	{
-		buffer->wrap = 65535;
+		buffer->wrap = 65534;
 		dirtybit = 0;
 	}
 	if(buffer->clk_div>255.7f)

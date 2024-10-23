@@ -8,8 +8,13 @@
 #include "hardware/pwm.h"
 #include <math.h>
 #include "hardware/timer.h"
+#include "pico/time.h"
+#include "pico/multicore.h"
 
 
+#define secure_action_timeout 200
+
+int speed;
 int left_top_motor_speed;
 int left_bot_motor_speed;
 int right_top_motor_speed;
@@ -33,6 +38,7 @@ void answer()
     }
 }
 
+uint32_t coms_time_stamp;
 int fetch_index=0;
 
 void fetch_command(int num)
@@ -47,12 +53,14 @@ void fetch_command(int num)
         }
         }
         gpio_put(25,!gpio_get_out_level(25));
+        coms_time_stamp=to_ms_since_boot(get_absolute_time()); //reset to defaults if coms timeout after 200ms
 }
 
 void unpack_frame()
 { //add further treatment like mapping signs and such
-  printf("packed data into corresponding variables wherease: flagset=%X\nLTmot=%i\nLBmot=%i\nRTmot=%i\nRBmot=%i\nArm rotation=%i\nArm pose=%i\nElbow pose=%i\nExtension speed=%i\nPitch=%i\nYaw=%i\nGrip=%i\n",pico_frame.flag_set, pico_frame.left_top_motor_target, pico_frame.left_bot_motor_target, pico_frame.right_top_motor_target, pico_frame.right_bot_motor_target, pico_frame.arm_rotation_speed, pico_frame.arm_servo_pose, pico_frame.elbow_servo_pose, pico_frame.arm_extension_speed, pico_frame.pitch_servo_pose, pico_frame.yaw_servo_pose, pico_frame.grip_servo_pose);
-  printf("Ease:%f\n",pico_frame.ease_value);
+    printf("The packets fetched:\nflags:%x\nMotor Power:%f\nMotor Bias:%f\nRot Speed:%f\nArm pose:%i\nElbow pose:%i\nExtns Speed:%f\nPitch pose:%i\nYaw pose:%i\nGrip pose:%i\n\n\n",
+    pico_frame.flag_set,pico_frame.motor_power,pico_frame.motor_bias,pico_frame.arm_rotation_speed,pico_frame.arm_servo_pose,pico_frame.elbow_servo_pose,
+    pico_frame.arm_extension_speed,pico_frame.pitch_servo_pose,pico_frame.yaw_servo_pose,pico_frame.grip_servo_pose);
 }
 
 uint32_t pwm_reference_count;
@@ -148,6 +156,143 @@ bool repeating_timer_callback(repeating_timer *t) {
     return true;
 }
 
+void init_coms()
+{
+
+}
+
+void secure_action_check()
+{
+   
+
+}
+
+void second_core_test()
+{
+    static int speed=0;
+    while(1){
+     if(pico_frame.flag_set==1){
+            if(pico_frame.motor_power>=0.0)
+            {
+                gpio_put(left_top_motor_n_pin,0);
+                gpio_put(left_top_motor_p_pin,1);
+                gpio_put(right_top_motor_n_pin,0);
+                gpio_put(right_top_motor_p_pin,1);
+                gpio_put(left_bot_motor_n_pin,0);
+                gpio_put(left_bot_motor_p_pin,1);
+                gpio_put(right_bot_motor_n_pin,0);
+                gpio_put(right_bot_motor_p_pin,1);
+                speed = (int)(pico_frame.motor_power*wrap_set[left_side_motor_pwm_slice]);
+                if(pico_frame.motor_bias>=0.5){
+                gpio_put(right_bot_motor_n_pin,!gpio_get_out_level(right_bot_motor_n_pin));
+                gpio_put(right_bot_motor_p_pin,!gpio_get_out_level(right_bot_motor_p_pin));
+                gpio_put(right_top_motor_n_pin,!gpio_get_out_level(right_top_motor_n_pin));
+                gpio_put(right_top_motor_p_pin,!gpio_get_out_level(right_top_motor_p_pin));
+                pwm_set_gpio_level(left_top_motor_PWM_pin,speed);
+                pwm_set_gpio_level(left_bot_motor_PWM_pin,speed);
+                pwm_set_gpio_level(right_top_motor_PWM_pin,speed);
+                pwm_set_gpio_level(right_bot_motor_PWM_pin,speed);
+                }else if(pico_frame.motor_bias<=-0.5)
+                {
+                gpio_put(left_bot_motor_n_pin,!gpio_get_out_level(left_bot_motor_n_pin));
+                gpio_put(left_bot_motor_p_pin,!gpio_get_out_level(left_bot_motor_p_pin));
+                gpio_put(left_top_motor_n_pin,!gpio_get_out_level(left_top_motor_n_pin));
+                gpio_put(left_top_motor_p_pin,!gpio_get_out_level(left_top_motor_p_pin));
+                pwm_set_gpio_level(left_top_motor_PWM_pin,speed);
+                pwm_set_gpio_level(left_bot_motor_PWM_pin,speed);
+                pwm_set_gpio_level(right_top_motor_PWM_pin,speed);
+                pwm_set_gpio_level(right_bot_motor_PWM_pin,speed);
+                }else
+                {
+                pwm_set_gpio_level(left_top_motor_PWM_pin,0);
+                pwm_set_gpio_level(left_bot_motor_PWM_pin,0);
+                pwm_set_gpio_level(right_top_motor_PWM_pin,0);
+                pwm_set_gpio_level(right_bot_motor_PWM_pin,0);
+                }
+            }else
+            {
+                gpio_put(left_top_motor_n_pin,1);
+                gpio_put(left_top_motor_p_pin,0); 
+                gpio_put(right_top_motor_n_pin,1);
+                gpio_put(right_top_motor_p_pin,0);
+                gpio_put(left_bot_motor_n_pin,1);
+                gpio_put(left_bot_motor_p_pin,0);
+                gpio_put(right_bot_motor_n_pin,1);
+                gpio_put(right_bot_motor_p_pin,0);
+                speed = (int)(-pico_frame.motor_power*wrap_set[left_side_motor_pwm_slice]);
+                if(pico_frame.motor_bias>=0.5){
+                gpio_put(right_bot_motor_n_pin,!gpio_get_out_level(right_bot_motor_n_pin));
+                gpio_put(right_bot_motor_p_pin,!gpio_get_out_level(right_bot_motor_p_pin));
+                gpio_put(right_top_motor_n_pin,!gpio_get_out_level(right_top_motor_n_pin));
+                gpio_put(right_top_motor_p_pin,!gpio_get_out_level(right_top_motor_p_pin));
+                pwm_set_gpio_level(left_top_motor_PWM_pin,speed);
+                pwm_set_gpio_level(left_bot_motor_PWM_pin,speed);
+                pwm_set_gpio_level(right_top_motor_PWM_pin,speed);
+                pwm_set_gpio_level(right_bot_motor_PWM_pin,speed);
+                }else if(pico_frame.motor_bias<=-0.5)
+                {
+                gpio_put(left_bot_motor_n_pin,!gpio_get_out_level(left_bot_motor_n_pin));
+                gpio_put(left_bot_motor_p_pin,!gpio_get_out_level(left_bot_motor_p_pin));
+                gpio_put(left_top_motor_n_pin,!gpio_get_out_level(left_top_motor_n_pin));
+                gpio_put(left_top_motor_p_pin,!gpio_get_out_level(left_top_motor_p_pin));
+                pwm_set_gpio_level(left_top_motor_PWM_pin,speed);
+                pwm_set_gpio_level(left_bot_motor_PWM_pin,speed);
+                pwm_set_gpio_level(right_top_motor_PWM_pin,speed);
+                pwm_set_gpio_level(right_bot_motor_PWM_pin,speed);
+                }
+        }}else{
+        if(pico_frame.motor_power>=0.0)
+        {
+            gpio_put(left_top_motor_n_pin,0);
+            gpio_put(left_top_motor_p_pin,1);
+            gpio_put(right_top_motor_n_pin,0);
+            gpio_put(right_top_motor_p_pin,1);
+            gpio_put(left_bot_motor_n_pin,0);
+            gpio_put(left_bot_motor_p_pin,1);
+            gpio_put(right_bot_motor_n_pin,0);
+            gpio_put(right_bot_motor_p_pin,1);
+            speed = (int)(pico_frame.motor_power*wrap_set[left_side_motor_pwm_slice]);
+            if(pico_frame.motor_bias>=0.0){
+            pwm_set_gpio_level(left_top_motor_PWM_pin,speed);
+            pwm_set_gpio_level(left_bot_motor_PWM_pin,speed);
+            pwm_set_gpio_level(right_top_motor_PWM_pin,speed-speed*(pico_frame.motor_bias));
+            pwm_set_gpio_level(right_bot_motor_PWM_pin,speed- speed*(pico_frame.motor_bias));
+            }else
+            {
+            pwm_set_gpio_level(left_top_motor_PWM_pin,speed-speed*(-pico_frame.motor_bias));
+            pwm_set_gpio_level(left_bot_motor_PWM_pin,speed-speed*(-pico_frame.motor_bias));
+            pwm_set_gpio_level(right_top_motor_PWM_pin,speed);
+            pwm_set_gpio_level(right_bot_motor_PWM_pin,speed);
+            }
+        }else
+        {
+            gpio_put(left_top_motor_n_pin,1);
+            gpio_put(left_top_motor_p_pin,0); 
+            gpio_put(right_top_motor_n_pin,1);
+            gpio_put(right_top_motor_p_pin,0);
+            gpio_put(left_bot_motor_n_pin,1);
+            gpio_put(left_bot_motor_p_pin,0);
+            gpio_put(right_bot_motor_n_pin,1);
+            gpio_put(right_bot_motor_p_pin,0);
+            speed = (int)(-pico_frame.motor_power*wrap_set[left_side_motor_pwm_slice]);
+            if(pico_frame.motor_bias>=0.0){
+            pwm_set_gpio_level(left_top_motor_PWM_pin,speed);
+            pwm_set_gpio_level(left_bot_motor_PWM_pin,speed);
+            pwm_set_gpio_level(right_top_motor_PWM_pin,speed-speed*(pico_frame.motor_bias));
+            pwm_set_gpio_level(right_bot_motor_PWM_pin,speed-speed*(pico_frame.motor_bias));
+            }else
+            {
+            pwm_set_gpio_level(left_top_motor_PWM_pin,speed- speed*(-pico_frame.motor_bias));
+            pwm_set_gpio_level(left_bot_motor_PWM_pin,speed- speed*(-pico_frame.motor_bias));
+            pwm_set_gpio_level(right_top_motor_PWM_pin,speed);
+            pwm_set_gpio_level(right_bot_motor_PWM_pin,speed);
+            }
+        }
+        }
+        }
+
+}
+
 
 int main()
 {   
@@ -172,12 +317,77 @@ int main()
     pwm_config_set_wrap(&right_side_motor_pwm_config,div.wrap);
     pwm_config_set_wrap(&arm_extension_pwm_config,div.wrap);
     pwm_config_set_wrap(&arm_rotation_pwm_config,div.wrap); 
+
     //saving the wraps;
     wrap_set[left_side_motor_pwm_slice]=div.wrap;
     wrap_set[right_side_motor_pwm_slice]=div.wrap;
     wrap_set[arm_extension_pwm_slice]=div.wrap;
     wrap_set[arm_rotation_pwm_slice]=div.wrap;;
     printf("calculated motor div: %f and wrap: %i\n",div.clk_div,div.wrap);
+
+    gpio_init(25);
+    gpio_set_dir(25,1);
+
+    gpio_init(left_top_motor_n_pin);
+    gpio_init(left_top_motor_p_pin);
+    gpio_init(left_top_motor_PWM_pin);
+
+    gpio_init(right_top_motor_n_pin);
+    gpio_init(right_top_motor_p_pin);
+    gpio_init(right_top_motor_PWM_pin);
+
+    gpio_init(left_bot_motor_n_pin);
+    gpio_init(left_bot_motor_p_pin);
+    gpio_init(left_bot_motor_PWM_pin);
+
+    gpio_init(right_bot_motor_n_pin);
+    gpio_init(right_bot_motor_p_pin);
+    gpio_init(right_bot_motor_PWM_pin);
+
+    gpio_init(arm_rotation_motor_n_pin);
+    gpio_init(arm_rotation_motor_p_pin);
+
+    gpio_init(arm_servo_pin);
+    gpio_init(elbow_servo_pin);
+
+    gpio_init(arm_extension_motor_n_pin);
+    gpio_init(arm_extension_motor_p_pin);
+    gpio_init(pitch_servo_pin);
+    gpio_init(yaw_servo_pin);
+    gpio_init(grip_servo_pin);
+
+    gpio_set_function(left_top_motor_PWM_pin,GPIO_FUNC_PWM);
+    gpio_set_function(left_bot_motor_PWM_pin,GPIO_FUNC_PWM);
+    gpio_set_function(right_top_motor_PWM_pin,GPIO_FUNC_PWM);
+    gpio_set_function(right_bot_motor_PWM_pin,GPIO_FUNC_PWM);
+
+    gpio_set_function(arm_rotation_motor_n_pin,GPIO_FUNC_PWM);
+    gpio_set_function(arm_rotation_motor_p_pin,GPIO_FUNC_PWM);
+    gpio_set_function(arm_extension_motor_n_pin,GPIO_FUNC_PWM);
+    gpio_set_function(arm_extension_motor_p_pin,GPIO_FUNC_PWM);
+
+
+    gpio_set_dir(left_top_motor_n_pin,1);
+    gpio_set_dir(left_top_motor_p_pin,1);
+    gpio_set_dir(left_top_motor_PWM_pin,1);
+
+    gpio_set_dir(right_top_motor_n_pin,1);
+    gpio_set_dir(right_top_motor_p_pin,1);
+    gpio_set_dir(right_top_motor_PWM_pin,1);
+
+    gpio_set_dir(left_bot_motor_n_pin,1);
+    gpio_set_dir(left_bot_motor_p_pin,1);
+    gpio_set_dir(left_bot_motor_PWM_pin,1);
+
+    gpio_set_dir(right_bot_motor_n_pin,1);
+    gpio_set_dir(right_bot_motor_p_pin,1);
+    gpio_set_dir(right_bot_motor_PWM_pin,1);
+
+    gpio_set_dir(arm_rotation_motor_n_pin,1);
+    gpio_set_dir(arm_rotation_motor_p_pin,1);
+
+    gpio_set_dir(arm_extension_motor_n_pin,1);
+    gpio_set_dir(arm_extension_motor_p_pin,1);
 
 
     pwm_init(left_side_motor_pwm_slice,&left_side_motor_pwm_config,0);
@@ -187,41 +397,9 @@ int main()
     pwm_init(pitch_yaw_servo_pwm_slice,&pitch_yaw_servo_pwm_config,0);
     pwm_init(grip_servo_pwm_slice,&grip_servo_pwm_config,0);
 
-    gpio_init(25);
-    gpio_set_dir(25,1);
-
-    gpio_init(left_top_motor_n_pin);
-    gpio_init(left_top_motor_p_pin);
-    gpio_init(left_top_motor_PWM_pin);
-    gpio_init(right_top_motor_n_pin);
-    gpio_init(right_top_motor_p_pin);
-    gpio_init(right_top_motor_PWM_pin);
-    gpio_init(left_bot_motor_n_pin);
-    gpio_init(left_bot_motor_p_pin);
-    gpio_init(left_bot_motor_PWM_pin);
-    gpio_init(right_bot_motor_n_pin);
-    gpio_init(right_bot_motor_p_pin);
-    gpio_init(right_bot_motor_PWM_pin);
-    gpio_init(arm_rotation_motor_n_pin);
-    gpio_init(arm_rotation_motor_p_pin);
-    gpio_init(arm_servo_pin);
-    gpio_init(elbow_servo_pin);
-    gpio_init(arm_extension_motor_n_pin);
-    gpio_init(arm_extension_motor_p_pin);
-    gpio_init(pitch_servo_pin);
-    gpio_init(yaw_servo_pin);
-    gpio_init(grip_servo_pin);
-    gpio_set_function(left_top_motor_PWM_pin,GPIO_FUNC_PWM);
-    gpio_set_function(left_bot_motor_PWM_pin,GPIO_FUNC_PWM);
-    gpio_set_function(left_bot_motor_PWM_pin,GPIO_FUNC_PWM);
-    gpio_set_function(right_bot_motor_PWM_pin,GPIO_FUNC_PWM);
-    gpio_set_function(arm_rotation_motor_n_pin,GPIO_FUNC_PWM);
-    gpio_set_function(arm_rotation_motor_p_pin,GPIO_FUNC_PWM);
-    gpio_set_function(arm_extension_motor_n_pin,GPIO_FUNC_PWM);
-    gpio_set_function(arm_extension_motor_p_pin,GPIO_FUNC_PWM);
 
 
-    gpio_set_dir(arm_servo_pin,1);
+    gpio_set_dir(arm_servo_pin,1); 
     gpio_set_dir(elbow_servo_pin,1);
     gpio_set_dir(pitch_servo_pin,1);
     gpio_set_dir(yaw_servo_pin,1);
@@ -245,41 +423,25 @@ int main()
     pwm_set_enabled(right_side_motor_pwm_slice,1);
     pwm_set_enabled(arm_extension_pwm_slice,1);
     pwm_set_enabled(arm_rotation_pwm_slice,1);
+    
 
     Mechiane.init();
 
     repeating_timer timer;
     add_repeating_timer_us(5, repeating_timer_callback, NULL, &timer);
 
+
+    multicore_launch_core1(second_core_test);
     while (true) 
     {
-        sleep_ms(20);
-        static int a;
-        static bool b;
-
-        if(a>180)
-        {
-            a=180;
-            b=1;
-        }else if(a<0){a=0; b=0;}
-
-        if(b)
-        {
-            a--;
-        }else
-        {
-            a++;
-        }
-
-        Mechiane.arm.max_angle=180;
-        Mechiane.arm.minimum = 300;
-        Mechiane.arm.maximum = 2140;
-
-        Mechiane.elbow.max_angle=180;
-        Mechiane.elbow.minimum = 300;
-        Mechiane.elbow.maximum = 2140;
-
-        Mechiane.arm.setPose(a);
-        Mechiane.elbow.setPose(180-a);
+       if(to_ms_since_boot(get_absolute_time())-coms_time_stamp>=secure_action_timeout)
+       {
+        pico_frame.motor_bias=0.0;
+        pico_frame.motor_power=0.0;
+        pico_frame.arm_extension_speed=0.0;
+        pico_frame.arm_rotation_speed=0.0;
+        speed=0;
+       }
     }
 }
+ 

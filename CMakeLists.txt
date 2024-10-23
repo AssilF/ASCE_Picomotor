@@ -57,7 +57,7 @@ target_include_directories(ASCE_Picomotor PRIVATE
   ${CMAKE_CURRENT_LIST_DIR}
   ${CMAKE_CURRENT_LIST_DIR}/.. # for our common lwipopts or any other standard includes, if required
 )
-target_link_libraries(ASCE_Picomotor pico_i2c_slave hardware_i2c hardware_irq hardware_pwm)
+target_link_libraries(ASCE_Picomotor pico_i2c_slave hardware_i2c hardware_irq hardware_pwm pico_multicore)
 
 pico_add_extra_outputs(ASCE_Picomotor)
 
