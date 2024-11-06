@@ -18,10 +18,10 @@
 #define right_bot_motor_PWM_pin 5//PWM2B
 
 
-#define arm_rotation_motor_p_pin 6  //PWM3A
-#define arm_rotation_motor_n_pin 7  //PWM3B
-#define arm_extension_motor_p_pin 8 //PWM4A
-#define arm_extension_motor_n_pin 9 //PWM4B
+#define arm_rotation_motor_p_pin 8  //PWM3A
+#define arm_rotation_motor_n_pin 9 //PWM3B
+#define arm_extension_motor_p_pin 6//PWM4A
+#define arm_extension_motor_n_pin 7//PWM4B
 #define arm_servo_pin 10           //PWM5A MG996r Check in the datasheet for the servo timings and frequencies 
 #define elbow_servo_pin 11         //PWM5B (if different properties put on PWM0A in another pin) MG996r //These two may have different pwm properties but it is to be tested
 #define pitch_servo_pin 12         //PWM6A SG90
