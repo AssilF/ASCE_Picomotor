@@ -456,21 +456,21 @@ int main()
        }
 
         //Mechiane controls unpacking (Maybe implement easing?)
-        Mechiane.arm.setPose(pico_frame.arm_servo_pose);
-        Mechiane.elbow.setPose(pico_frame.elbow_servo_pose);
-        Mechiane.pitch.setPose(pico_frame.pitch_servo_pose);
+        Mechiane.arm.setPose(180-pico_frame.arm_servo_pose);
+        Mechiane.elbow.setPose(180-pico_frame.elbow_servo_pose);
+        Mechiane.pitch.setPose(180-pico_frame.pitch_servo_pose);
         Mechiane.yaw.setPose(pico_frame.yaw_servo_pose);
         Mechiane.grip.setPose(pico_frame.grip_servo_pose);
 
 
         if(pico_frame.arm_rotation_speed<0.0)
         {
-            pwm_set_gpio_level(arm_rotation_motor_n_pin,(int)(-pico_frame.arm_rotation_speed*wrap_set[arm_rotation_pwm_slice]));
-            pwm_set_gpio_level(arm_rotation_motor_p_pin,0);
-        }else
-        {
             pwm_set_gpio_level(arm_rotation_motor_n_pin,0);
             pwm_set_gpio_level(arm_rotation_motor_p_pin,(int)(pico_frame.arm_rotation_speed*wrap_set[arm_rotation_pwm_slice]));
+        }else
+        {            pwm_set_gpio_level(arm_rotation_motor_n_pin,(int)(-pico_frame.arm_rotation_speed*wrap_set[arm_rotation_pwm_slice]));
+            pwm_set_gpio_level(arm_rotation_motor_p_pin,0);
+
         }
         // sleep_ms(1);
         if(pico_frame.arm_extension_speed<0.0)
