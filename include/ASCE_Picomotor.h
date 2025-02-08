@@ -28,6 +28,7 @@
 #define yaw_servo_pin 13           //PWM6B SG90
 #define grip_servo_pin 14          //PWM7A SG90
 
+
 pwm_config left_side_motor_pwm_config; //the slice of the pwm controller for this side is PWM1 
 pwm_config right_side_motor_pwm_config; //the slice of the pwm controller for this side is PWM2
 
@@ -76,6 +77,11 @@ struct control_frame
 #define SG90_maximum_pulse_width 2500
 #define SG90_minimum_pulse_width 500
 
+// Define PWM frequency limits
+#define PWM_FREQ_MIN 3000   // Minimum PWM frequency (5 kHz) for max torque
+#define PWM_FREQ_MAX 17000  // Maximum PWM frequency (25 kHz) for efficiency
+#define SYS_CLOCK 125000000 // Pico system clock (125 MHz)
+
 
 double mapRange(double a1,double a2,double b1,double b2,double s) 
 {
@@ -93,43 +99,77 @@ double constrain(double x, double a, double b) {
         return x;
 }
 
-struct pwm_divisor
-{
+// Define the deadzone for the rotation joystick (bias)
+#define JOYSTICK_DEADZONE 0.15f
+
+// Helper function to apply deadzone to the rotation (bias) input.
+// If the absolute value of input is below deadzone, return 0.
+// Otherwise, scale it so that the output “starts” at zero after the deadzone.
+float apply_deadzone(float input, float deadzone) {
+    if (fabsf(input) < deadzone)
+        return 0.0f;
+    // Scale the input so that it ranges from 0 to 1 (or -1 to 0) outside the deadzone.
+    if (input > 0)
+        return (input - deadzone) / (1.0f - deadzone);
+    else
+        return (input + deadzone) / (1.0f - deadzone);
+}
+
+static inline uint16_t get_pwm_wrap(uint slice_num) {
+    return pwm_hw->slice[slice_num].top;
+}
+
+struct pwm_divisor {
     float clk_div;
     uint16_t wrap;
 };
 
-bool calculate_PWM_div(pwm_divisor* buffer, double target_freq)
-{
-	bool dirtybit=1;
-	if (system_freq / (target_freq * 65534) < 1)
-	{
-		buffer->clk_div = 1.0f;
-		buffer->wrap = system_freq/target_freq;
-	}
-	else
-	{
-		buffer->clk_div= system_freq/(target_freq * 65534);
-		buffer->wrap = 65534;
-	}
-	if(buffer->wrap<1)
-	{
-		buffer->wrap = 1;
-		dirtybit = 0;
-	}else
-	if(buffer->wrap > 65534)
-	{
-		buffer->wrap = 65534;
-		dirtybit = 0;
-	}
-	if(buffer->clk_div>255.7f)
-	{
-		buffer->clk_div = 255.7f;
-		dirtybit = 0;
-	}else
-	if(buffer->clk_div < 1.0f)
-	{
-		buffer->clk_div = 1.0f;
-	};
-	return dirtybit;
+bool calculate_PWM_div(pwm_divisor* buffer, double target_freq) {
+    bool dirtybit = true;
+
+    // --- Enforce minimum PWM frequency: 5 kHz ---
+    if (target_freq < PWM_FREQ_MIN) {
+        target_freq = PWM_FREQ_MIN;
+        dirtybit = false;
+    }
+
+    // --- Enforce a minimum resolution (wrap+1 >= 1000) ---
+    // For a given target frequency and a given divider, the ideal wrap is:
+    //    wrap = (system_freq / (clk_div * target_freq)) - 1.
+    // To maximize resolution we try with the smallest divider: clk_div = 1.
+    double ideal_wrap = system_freq / target_freq - 1;
+    
+    // If the ideal wrap is less than 1000, resolution is too low.
+    // In that case, we must increase the divider so that wrap becomes at least 1000.
+    if (ideal_wrap < 1000) {
+        // Set the resolution to 1000 (i.e. 1001 counts per cycle)
+        buffer->wrap = 1000;
+        // Calculate the divider needed to achieve that resolution at the target frequency.
+        // From: system_freq / (clk_div * (wrap+1)) = target_freq
+        buffer->clk_div = system_freq / (target_freq * (buffer->wrap + 1));
+        dirtybit = false;
+    } 
+    // If the ideal wrap exceeds the maximum allowed value, clamp it.
+    else if (ideal_wrap > 65534) {
+        buffer->wrap = 65534;
+        buffer->clk_div = system_freq / (target_freq * (buffer->wrap + 1));
+        dirtybit = false;
+    } 
+    // Otherwise, use the ideal settings with the minimum divider (1.0f)
+    else {
+        buffer->clk_div = 1.0f;
+        buffer->wrap = (uint16_t)(ideal_wrap);
+    }
+
+    // --- Clamp the clock divider to its allowed range ---
+    if (buffer->clk_div < 1.0f) {
+        buffer->clk_div = 1.0f;
+        dirtybit = false;
+    }
+    if (buffer->clk_div > 255.7f) {
+        buffer->clk_div = 255.7f;
+        dirtybit = false;
+    }
+
+    return dirtybit;
 }
