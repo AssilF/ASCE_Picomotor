@@ -78,8 +78,8 @@ struct control_frame
 #define SG90_minimum_pulse_width 500
 
 // Define PWM frequency limits
-#define PWM_FREQ_MIN 3000   // Minimum PWM frequency (5 kHz) for max torque
-#define PWM_FREQ_MAX 17000  // Maximum PWM frequency (25 kHz) for efficiency
+#define PWM_FREQ_MIN 5000   // Minimum PWM frequency (5 kHz) for max torque
+#define PWM_FREQ_MAX 18000  // Maximum PWM frequency (25 kHz) for efficiency
 #define SYS_CLOCK 125000000 // Pico system clock (125 MHz)
 
 

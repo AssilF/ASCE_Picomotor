@@ -160,82 +160,85 @@ bool servo_core(repeating_timer *t) {
 
 
 
-// calculates and applies the appropriate clock divider and wrap value.
-void set_motor_pwm(uint slice_num, float speed_percent) {
-    // Clamp speed_percent between 0 and 100
-    speed_percent = constrain(speed_percent, 0, 100);
-    float speed_ratio = speed_percent / 100.0f;
+void drive_motors() {
+    // Retrieve and constrain the overall speed (percentage)
+    float sp = constrain(pico_frame.motor_power, -1.0f, 1.0f);
+    // Read the raw bias (expected range -1 to 1)
+    float bias = pico_frame.motor_bias;
 
-    // Map speed to a target frequency using quadratic mapping for finer control at low speeds.
-    uint32_t target_freq = PWM_FREQ_MIN + (uint32_t)((PWM_FREQ_MAX - PWM_FREQ_MIN) * speed_ratio * speed_ratio);
-
-    pwm_divisor pwm_config;
-    // Use our calculate_PWM_div function (with the added constraints)
-    if (!calculate_PWM_div(&pwm_config, target_freq)) {
-        // If clamping occurred, you might log or handle this case.
-        // For now, we continue with the clamped values.
-        printf("PWM settings clamped: clk_div=%.2f, wrap=%d\n", pwm_config.clk_div, pwm_config.wrap);
-    }
-
-    pwm_set_clkdiv(slice_num, pwm_config.clk_div);
-    pwm_set_wrap(slice_num, pwm_config.wrap);
-}
-
-// Global flag to switch between bias (differential) mode and rotation mode.
-bool bias_mode = true;  // true: differential speed adjustment; false: one side reverses for rotation
-
-// This function drives the left and right motors using a speed percentage and a bias (rotation)
-// The bias is adjusted using a deadzone so that small joystick deviations do not cause rotation.
-void drive_motors(float speed_percent, float bias,bool mode) {
-    bias_mode=mode;
-    // Apply deadzone to the bias (rotation) input.
-    float adjusted_bias = apply_deadzone(bias, JOYSTICK_DEADZONE);
-    
-    // Clamp speed percentage between 0 and 100.
-    speed_percent = constrain(speed_percent, 0, 100);
-
+    // Determine drive mode: if bit0 of flag_set is set, use rotation mode.
+    bool rotation_mode = (pico_frame.flag_set & 0x01);
     float left_speed, right_speed;
     
-    if (bias_mode) {
-        // Bias mode: adjust the speeds on each side.
-        // A positive bias makes the right side go faster and the left side slower.
-        left_speed  = speed_percent * (1.0f - adjusted_bias);
-        right_speed = speed_percent * (1.0f + adjusted_bias);
-    } else {
-        // Rotation mode: one side reverses to produce rotation.
-        // Here, the sign of adjusted_bias determines which side reverses.
-        left_speed  = speed_percent * ((adjusted_bias >= 0) ? 1.0f : -1.0f);
-        right_speed = speed_percent * ((adjusted_bias <= 0) ? 1.0f : -1.0f);
+    if (rotation_mode) { //optimize here, this is for the bias deadzone and not for rotiation mode, it may not be necessary since the bias information aside from the sign, isn't necessary.
+    if (fabsf(bias) < JOYSTICK_DEADZONE)
+        bias = 0.0f;
+    else
+        bias = (bias > 0) ? (bias - JOYSTICK_DEADZONE) / (1.0f - JOYSTICK_DEADZONE)
+                          : (bias + JOYSTICK_DEADZONE) / (1.0f - JOYSTICK_DEADZONE);
     }
     
-    // Use absolute values for PWM duty cycle calculation.
+    
+if (rotation_mode) { //pivot mode
+    if (bias > 0) {  
+        left_speed  = sp;  
+        right_speed = -sp; 
+    } else if (bias < 0) {  
+        left_speed  = -sp;  
+        right_speed = sp;  
+    } else {  
+        left_speed  = sp;  
+        right_speed = sp;  
+    }
+} else {  
+    // Bias mode: Differential steering (one side moves faster)
+    left_speed  = sp * (1.0f - bias);
+    right_speed = sp * (1.0f + bias);
+}
+
+
+    // Compute absolute speeds (for PWM duty calculations)
     float left_duty  = fabsf(left_speed);
     float right_duty = fabsf(right_speed);
-
-    // Set the PWM frequency based on the current speed for each side.
-    set_motor_pwm(left_side_motor_pwm_slice, left_duty);
-    set_motor_pwm(right_side_motor_pwm_slice, right_duty);
     
-    // Retrieve the current wrap values for each side.
-    uint16_t left_wrap = get_pwm_wrap(left_side_motor_pwm_slice);
+    // Quadratic mapping: target frequency scales with (duty/100)^2.
+    uint32_t left_target_freq  = PWM_FREQ_MIN + (uint32_t)((PWM_FREQ_MAX - PWM_FREQ_MIN) * (left_duty) * (left_duty));
+    uint32_t right_target_freq = PWM_FREQ_MIN + (uint32_t)((PWM_FREQ_MAX - PWM_FREQ_MIN) * (right_duty) * (right_duty));
+    
+    // Calculate PWM configuration for left and right sides.
+    pwm_divisor left_pwm, right_pwm;
+    calculate_PWM_div(&left_pwm, left_target_freq);
+    calculate_PWM_div(&right_pwm, right_target_freq);
+    
+    // Apply the calculated clock divider and wrap to the PWM slices.
+    pwm_set_clkdiv(left_side_motor_pwm_slice, left_pwm.clk_div);
+    pwm_set_wrap(left_side_motor_pwm_slice, left_pwm.wrap);
+    pwm_set_clkdiv(right_side_motor_pwm_slice, right_pwm.clk_div);
+    pwm_set_wrap(right_side_motor_pwm_slice, right_pwm.wrap);
+    
+    // Retrieve the wrap values directly.
+    uint16_t left_wrap  = get_pwm_wrap(left_side_motor_pwm_slice);
     uint16_t right_wrap = get_pwm_wrap(right_side_motor_pwm_slice);
     
-    // Set the PWM duty cycle using the absolute (non-negative) duty value.
-    pwm_set_gpio_level(left_top_motor_PWM_pin,  (uint32_t)(left_duty  * left_wrap / 100));
-    pwm_set_gpio_level(left_bot_motor_PWM_pin,  (uint32_t)(left_duty  * left_wrap / 100));
-    pwm_set_gpio_level(right_top_motor_PWM_pin, (uint32_t)(right_duty * right_wrap / 100));
-    pwm_set_gpio_level(right_bot_motor_PWM_pin, (uint32_t)(right_duty * right_wrap / 100));
+    // Set the PWM duty cycle levels (always using a positive value).
+    uint32_t left_level  = (uint32_t)(left_duty  * left_wrap);
+    uint32_t right_level = (uint32_t)(right_duty * right_wrap);
+    pwm_set_gpio_level(left_top_motor_PWM_pin, left_level);
+    pwm_set_gpio_level(left_bot_motor_PWM_pin, left_level);
+    pwm_set_gpio_level(right_top_motor_PWM_pin, right_level);
+    pwm_set_gpio_level(right_bot_motor_PWM_pin, right_level);
     
-    // Set direction pins based on the sign of the computed speeds.
-    gpio_put(left_top_motor_p_pin, left_speed > 0);
-    gpio_put(left_top_motor_n_pin, left_speed < 0);
-    gpio_put(left_bot_motor_p_pin, left_speed > 0);
-    gpio_put(left_bot_motor_n_pin, left_speed < 0);
-
-    gpio_put(right_top_motor_p_pin, right_speed > 0);
-    gpio_put(right_top_motor_n_pin, right_speed < 0);
-    gpio_put(right_bot_motor_p_pin, right_speed > 0);
-    gpio_put(right_bot_motor_n_pin, right_speed < 0);
+    // Set motor direction pins based solely on the sign of the computed speeds.
+    bool left_forward  = (left_speed  > 0);
+    bool right_forward = (right_speed > 0);
+    gpio_put(left_top_motor_p_pin, left_forward);
+    gpio_put(left_top_motor_n_pin, !left_forward);
+    gpio_put(left_bot_motor_p_pin, left_forward);
+    gpio_put(left_bot_motor_n_pin, !left_forward);
+    gpio_put(right_top_motor_p_pin, right_forward);
+    gpio_put(right_top_motor_n_pin, !right_forward);
+    gpio_put(right_bot_motor_p_pin, right_forward);
+    gpio_put(right_bot_motor_n_pin, !right_forward);
 }
 
 
@@ -243,7 +246,7 @@ void drive_motors(float speed_percent, float bias,bool mode) {
 
 void second_core_test() //behold the hardcoding catastrophe, I won't otpimize it because I am melting and I am literally no-braining this thing
 {
-    drive_motors(pico_frame.motor_power,pico_frame.motor_bias,pico_frame.flag_set&1);
+    drive_motors();
     sleep_ms(1);
 }
 
