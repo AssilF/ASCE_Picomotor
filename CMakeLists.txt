@@ -37,7 +37,7 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(ASCE_Picomotor Wire.cpp ASCE_Picomotor.cpp)
+add_executable(ASCE_Picomotor Wire.cpp picomotor.cpp main.cpp)
 
 target_include_directories(ASCE_Picomotor PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 

@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
-#include <include/ASCE_Picomotor.h>
+#include <include/picomotor.h>
 #include "pico/i2c_slave.h"
 #include "Wire.h"
 #include "inttypes.h"
